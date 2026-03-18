@@ -39,23 +39,65 @@ abstract class Room {
 }
 
 class SingleRoom extends Room {
-
     public SingleRoom() {
         super("Single Room", 1, 180, 80);
     }
 }
 
 class DoubleRoom extends Room {
-
     public DoubleRoom() {
         super("Double Room", 2, 300, 120);
     }
 }
 
 class SuiteRoom extends Room {
-
     public SuiteRoom() {
         super("Suite Room", 3, 500, 250);
+    }
+}
+
+class Inventory {
+
+    private int singleAvailability;
+    private int doubleAvailability;
+    private int suiteAvailability;
+
+    public Inventory(int singleAvailability, int doubleAvailability, int suiteAvailability) {
+        this.singleAvailability = singleAvailability;
+        this.doubleAvailability = doubleAvailability;
+        this.suiteAvailability = suiteAvailability;
+    }
+
+    public int getSingleAvailability() {
+        return singleAvailability;
+    }
+
+    public int getDoubleAvailability() {
+        return doubleAvailability;
+    }
+
+    public int getSuiteAvailability() {
+        return suiteAvailability;
+    }
+}
+
+class SearchService {
+
+    public void searchRooms(Room single, Room dbl, Room suite, Inventory inventory) {
+
+        System.out.println("Available Rooms:\n");
+
+        if (inventory.getSingleAvailability() > 0) {
+            single.displayRoom(inventory.getSingleAvailability());
+        }
+
+        if (inventory.getDoubleAvailability() > 0) {
+            dbl.displayRoom(inventory.getDoubleAvailability());
+        }
+
+        if (inventory.getSuiteAvailability() > 0) {
+            suite.displayRoom(inventory.getSuiteAvailability());
+        }
     }
 }
 
@@ -64,15 +106,12 @@ public class BookMyStayApp {
     public static void main(String[] args) {
 
         Room single = new SingleRoom();
-        Room doubleRoom = new DoubleRoom();
+        Room dbl = new DoubleRoom();
         Room suite = new SuiteRoom();
 
-        int singleAvailability = 5;
-        int doubleAvailability = 3;
-        int suiteAvailability = 2;
+        Inventory inventory = new Inventory(5, 3, 0);
 
-        single.displayRoom(singleAvailability);
-        doubleRoom.displayRoom(doubleAvailability);
-        suite.displayRoom(suiteAvailability);
+        SearchService searchService = new SearchService();
+        searchService.searchRooms(single, dbl, suite, inventory);
     }
 }
