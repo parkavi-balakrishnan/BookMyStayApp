@@ -18,16 +18,8 @@ abstract class Room {
         return type;
     }
 
-    public int getBeds() {
-        return beds;
-    }
-
-    public int getSize() {
-        return size;
-    }
-
-    public double getPrice() {
-        return price;
+    public int getPrice() {
+        return (int) price;
     }
 }
 
@@ -51,12 +43,18 @@ class SuiteRoom extends Room {
 
 class Reservation {
 
+    private String reservationId;
     private String guestName;
     private Room room;
 
-    public Reservation(String guestName, Room room) {
+    public Reservation(String reservationId, String guestName, Room room) {
+        this.reservationId = reservationId;
         this.guestName = guestName;
         this.room = room;
+    }
+
+    public String getReservationId() {
+        return reservationId;
     }
 
     public String getGuestName() {
@@ -125,7 +123,7 @@ class BookingService {
 
         String roomId;
         do {
-            roomId = type.substring(0,1).toUpperCase() + (100 + allocatedRoomIds.size());
+            roomId = type.substring(0,1) + (100 + allocatedRoomIds.size());
         } while (allocatedRoomIds.contains(roomId));
 
         allocatedRoomIds.add(roomId);
@@ -137,9 +135,74 @@ class BookingService {
         inventory.decrement(type);
 
         System.out.println("Reservation Confirmed");
+        System.out.println("Reservation ID: " + reservation.getReservationId());
         System.out.println("Guest: " + reservation.getGuestName());
         System.out.println("Room Type: " + type);
         System.out.println("Assigned Room ID: " + roomId);
+        System.out.println();
+    }
+}
+
+class Service {
+
+    private String name;
+    private double cost;
+
+    public Service(String name, double cost) {
+        this.name = name;
+        this.cost = cost;
+    }
+
+    public double getCost() {
+        return cost;
+    }
+
+    public String getName() {
+        return name;
+    }
+}
+
+class AddOnServiceManager {
+
+    private Map<String, List<Service>> reservationServices = new HashMap<>();
+
+    public void addService(String reservationId, Service service) {
+        reservationServices
+                .computeIfAbsent(reservationId, k -> new ArrayList<>())
+                .add(service);
+    }
+
+    public double calculateTotalServiceCost(String reservationId) {
+
+        double total = 0;
+
+        List<Service> services = reservationServices.get(reservationId);
+
+        if (services != null) {
+            for (Service s : services) {
+                total += s.getCost();
+            }
+        }
+
+        return total;
+    }
+
+    public void displayServices(String reservationId) {
+
+        List<Service> services = reservationServices.get(reservationId);
+
+        if (services == null) {
+            System.out.println("No services selected.");
+            return;
+        }
+
+        System.out.println("Services for Reservation " + reservationId + ":");
+
+        for (Service s : services) {
+            System.out.println(s.getName() + " - $" + s.getCost());
+        }
+
+        System.out.println("Total Add-On Cost: $" + calculateTotalServiceCost(reservationId));
         System.out.println();
     }
 }
@@ -154,17 +217,32 @@ public class BookMyStayApp {
 
         BookingRequestQueue queue = new BookingRequestQueue();
 
-        queue.addRequest(new Reservation("Alice", single));
-        queue.addRequest(new Reservation("Bob", dbl));
-        queue.addRequest(new Reservation("Charlie", suite));
-        queue.addRequest(new Reservation("David", single));
+        queue.addRequest(new Reservation("R1", "Alice", single));
+        queue.addRequest(new Reservation("R2", "Bob", dbl));
+        queue.addRequest(new Reservation("R3", "Charlie", suite));
 
         InventoryService inventory = new InventoryService();
         BookingService bookingService = new BookingService(inventory);
 
+        List<Reservation> confirmedReservations = new ArrayList<>();
+
         while (queue.hasRequests()) {
             Reservation r = queue.getNextRequest();
             bookingService.processReservation(r);
+            confirmedReservations.add(r);
         }
+
+        AddOnServiceManager serviceManager = new AddOnServiceManager();
+
+        Service breakfast = new Service("Breakfast", 20);
+        Service airportPickup = new Service("Airport Pickup", 40);
+        Service spa = new Service("Spa Access", 60);
+
+        serviceManager.addService("R1", breakfast);
+        serviceManager.addService("R1", airportPickup);
+        serviceManager.addService("R2", spa);
+
+        serviceManager.displayServices("R1");
+        serviceManager.displayServices("R2");
     }
 }
