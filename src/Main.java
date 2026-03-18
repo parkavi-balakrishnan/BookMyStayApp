@@ -101,24 +101,29 @@ class InventoryService {
 
     public int getAvailability(String type) throws InvalidBookingException {
         if (!availability.containsKey(type)) {
-            throw new InvalidBookingException("Invalid room type requested: " + type);
+            throw new InvalidBookingException("Invalid room type: " + type);
         }
         return availability.get(type);
     }
 
     public void decrement(String type) throws InvalidBookingException {
 
-        if (!availability.containsKey(type)) {
-            throw new InvalidBookingException("Room type does not exist: " + type);
-        }
-
-        int count = availability.get(type);
+        int count = getAvailability(type);
 
         if (count <= 0) {
-            throw new InvalidBookingException("No available rooms for type: " + type);
+            throw new InvalidBookingException("No rooms available for " + type);
         }
 
         availability.put(type, count - 1);
+    }
+
+    public void increment(String type) throws InvalidBookingException {
+
+        if (!availability.containsKey(type)) {
+            throw new InvalidBookingException("Invalid room type: " + type);
+        }
+
+        availability.put(type, availability.get(type) + 1);
     }
 }
 
@@ -130,6 +135,33 @@ class BookingHistory {
         confirmedBookings.add(r);
     }
 
+    public boolean removeReservation(String reservationId) {
+
+        Iterator<Reservation> iterator = confirmedBookings.iterator();
+
+        while (iterator.hasNext()) {
+            Reservation r = iterator.next();
+
+            if (r.getReservationId().equals(reservationId)) {
+                iterator.remove();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public Reservation findReservation(String reservationId) {
+
+        for (Reservation r : confirmedBookings) {
+            if (r.getReservationId().equals(reservationId)) {
+                return r;
+            }
+        }
+
+        return null;
+    }
+
     public List<Reservation> getReservations() {
         return confirmedBookings;
     }
@@ -139,7 +171,7 @@ class BookingService {
 
     private InventoryService inventory;
     private Set<String> allocatedRoomIds = new HashSet<>();
-    private Map<String, Set<String>> roomAllocations = new HashMap<>();
+    private Map<String, String> reservationRoomMap = new HashMap<>();
     private BookingHistory history;
 
     public BookingService(InventoryService inventory, BookingHistory history) {
@@ -150,33 +182,26 @@ class BookingService {
     public void processReservation(Reservation reservation) throws InvalidBookingException {
 
         if (reservation == null) {
-            throw new InvalidBookingException("Reservation request cannot be null.");
+            throw new InvalidBookingException("Reservation cannot be null");
         }
 
         if (reservation.getGuestName() == null || reservation.getGuestName().isEmpty()) {
-            throw new InvalidBookingException("Guest name is required.");
-        }
-
-        if (reservation.getRoom() == null) {
-            throw new InvalidBookingException("Room selection is required.");
+            throw new InvalidBookingException("Guest name is required");
         }
 
         String type = reservation.getRoom().getType();
 
-        inventory.getAvailability(type);
+        inventory.decrement(type);
 
         String roomId;
+
         do {
             roomId = type.substring(0,1) + (100 + allocatedRoomIds.size());
         } while (allocatedRoomIds.contains(roomId));
 
         allocatedRoomIds.add(roomId);
 
-        roomAllocations
-                .computeIfAbsent(type, k -> new HashSet<>())
-                .add(roomId);
-
-        inventory.decrement(type);
+        reservationRoomMap.put(reservation.getReservationId(), roomId);
 
         history.addReservation(reservation);
 
@@ -187,23 +212,76 @@ class BookingService {
         System.out.println("Assigned Room ID: " + roomId);
         System.out.println();
     }
+
+    public String getAllocatedRoomId(String reservationId) {
+        return reservationRoomMap.get(reservationId);
+    }
+
+    public void removeRoomAllocation(String reservationId) {
+        reservationRoomMap.remove(reservationId);
+    }
+
+    public void releaseRoomId(String roomId) {
+        allocatedRoomIds.remove(roomId);
+    }
+}
+
+class CancellationService {
+
+    private BookingHistory history;
+    private InventoryService inventory;
+    private BookingService bookingService;
+
+    private Stack<String> rollbackStack = new Stack<>();
+
+    public CancellationService(BookingHistory history, InventoryService inventory, BookingService bookingService) {
+        this.history = history;
+        this.inventory = inventory;
+        this.bookingService = bookingService;
+    }
+
+    public void cancelReservation(String reservationId) throws InvalidBookingException {
+
+        Reservation reservation = history.findReservation(reservationId);
+
+        if (reservation == null) {
+            throw new InvalidBookingException("Reservation does not exist: " + reservationId);
+        }
+
+        String roomId = bookingService.getAllocatedRoomId(reservationId);
+
+        rollbackStack.push(roomId);
+
+        bookingService.releaseRoomId(roomId);
+
+        inventory.increment(reservation.getRoom().getType());
+
+        bookingService.removeRoomAllocation(reservationId);
+
+        history.removeReservation(reservationId);
+
+        System.out.println("Reservation Cancelled");
+        System.out.println("Reservation ID: " + reservationId);
+        System.out.println("Released Room ID: " + rollbackStack.pop());
+        System.out.println();
+    }
 }
 
 class BookingReportService {
 
     public void printBookingHistory(List<Reservation> reservations) {
 
-        System.out.println("Booking History:\n");
+        System.out.println("Current Booking History\n");
 
         for (Reservation r : reservations) {
             System.out.println(
                     "Reservation ID: " + r.getReservationId() +
                             " | Guest: " + r.getGuestName() +
-                            " | Room Type: " + r.getRoom().getType()
+                            " | Room: " + r.getRoom().getType()
             );
         }
 
-        System.out.println("\nTotal Bookings: " + reservations.size());
+        System.out.println("\nTotal Active Reservations: " + reservations.size());
     }
 }
 
@@ -211,34 +289,34 @@ public class BookMyStayApp {
 
     public static void main(String[] args) {
 
-        Room single = new SingleRoom();
-        Room dbl = new DoubleRoom();
-        Room suite = new SuiteRoom();
+        try {
 
-        BookingRequestQueue queue = new BookingRequestQueue();
+            Room single = new SingleRoom();
+            Room dbl = new DoubleRoom();
 
-        queue.addRequest(new Reservation("R1", "Alice", single));
-        queue.addRequest(new Reservation("R2", "Bob", dbl));
-        queue.addRequest(new Reservation("R3", "Charlie", suite));
-        queue.addRequest(new Reservation("R4", "", suite));
+            BookingRequestQueue queue = new BookingRequestQueue();
 
-        InventoryService inventory = new InventoryService();
-        BookingHistory history = new BookingHistory();
-        BookingService bookingService = new BookingService(inventory, history);
+            queue.addRequest(new Reservation("R1", "Alice", single));
+            queue.addRequest(new Reservation("R2", "Bob", dbl));
 
-        while (queue.hasRequests()) {
+            InventoryService inventory = new InventoryService();
+            BookingHistory history = new BookingHistory();
+            BookingService bookingService = new BookingService(inventory, history);
 
-            Reservation r = queue.getNextRequest();
-
-            try {
-                bookingService.processReservation(r);
-            } catch (InvalidBookingException e) {
-                System.out.println("Booking Failed: " + e.getMessage());
-                System.out.println();
+            while (queue.hasRequests()) {
+                bookingService.processReservation(queue.getNextRequest());
             }
-        }
 
-        BookingReportService reportService = new BookingReportService();
-        reportService.printBookingHistory(history.getReservations());
+            CancellationService cancellationService =
+                    new CancellationService(history, inventory, bookingService);
+
+            cancellationService.cancelReservation("R1");
+
+            BookingReportService reportService = new BookingReportService();
+            reportService.printBookingHistory(history.getReservations());
+
+        } catch (InvalidBookingException e) {
+            System.out.println("Operation Failed: " + e.getMessage());
+        }
     }
 }
