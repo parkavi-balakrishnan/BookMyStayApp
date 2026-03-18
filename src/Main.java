@@ -41,6 +41,12 @@ class SuiteRoom extends Room {
     }
 }
 
+class InvalidBookingException extends Exception {
+    public InvalidBookingException(String message) {
+        super(message);
+    }
+}
+
 class Reservation {
 
     private String reservationId;
@@ -93,12 +99,26 @@ class InventoryService {
         availability.put("Suite", 1);
     }
 
-    public int getAvailability(String type) {
-        return availability.getOrDefault(type, 0);
+    public int getAvailability(String type) throws InvalidBookingException {
+        if (!availability.containsKey(type)) {
+            throw new InvalidBookingException("Invalid room type requested: " + type);
+        }
+        return availability.get(type);
     }
 
-    public void decrement(String type) {
-        availability.put(type, availability.get(type) - 1);
+    public void decrement(String type) throws InvalidBookingException {
+
+        if (!availability.containsKey(type)) {
+            throw new InvalidBookingException("Room type does not exist: " + type);
+        }
+
+        int count = availability.get(type);
+
+        if (count <= 0) {
+            throw new InvalidBookingException("No available rooms for type: " + type);
+        }
+
+        availability.put(type, count - 1);
     }
 }
 
@@ -127,14 +147,23 @@ class BookingService {
         this.history = history;
     }
 
-    public void processReservation(Reservation reservation) {
+    public void processReservation(Reservation reservation) throws InvalidBookingException {
+
+        if (reservation == null) {
+            throw new InvalidBookingException("Reservation request cannot be null.");
+        }
+
+        if (reservation.getGuestName() == null || reservation.getGuestName().isEmpty()) {
+            throw new InvalidBookingException("Guest name is required.");
+        }
+
+        if (reservation.getRoom() == null) {
+            throw new InvalidBookingException("Room selection is required.");
+        }
 
         String type = reservation.getRoom().getType();
 
-        if (inventory.getAvailability(type) <= 0) {
-            System.out.println("No rooms available for " + type);
-            return;
-        }
+        inventory.getAvailability(type);
 
         String roomId;
         do {
@@ -191,14 +220,22 @@ public class BookMyStayApp {
         queue.addRequest(new Reservation("R1", "Alice", single));
         queue.addRequest(new Reservation("R2", "Bob", dbl));
         queue.addRequest(new Reservation("R3", "Charlie", suite));
+        queue.addRequest(new Reservation("R4", "", suite));
 
         InventoryService inventory = new InventoryService();
         BookingHistory history = new BookingHistory();
         BookingService bookingService = new BookingService(inventory, history);
 
         while (queue.hasRequests()) {
+
             Reservation r = queue.getNextRequest();
-            bookingService.processReservation(r);
+
+            try {
+                bookingService.processReservation(r);
+            } catch (InvalidBookingException e) {
+                System.out.println("Booking Failed: " + e.getMessage());
+                System.out.println();
+            }
         }
 
         BookingReportService reportService = new BookingReportService();
