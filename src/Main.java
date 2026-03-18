@@ -18,8 +18,8 @@ abstract class Room {
         return type;
     }
 
-    public int getPrice() {
-        return (int) price;
+    public double getPrice() {
+        return price;
     }
 }
 
@@ -102,14 +102,29 @@ class InventoryService {
     }
 }
 
+class BookingHistory {
+
+    private List<Reservation> confirmedBookings = new ArrayList<>();
+
+    public void addReservation(Reservation r) {
+        confirmedBookings.add(r);
+    }
+
+    public List<Reservation> getReservations() {
+        return confirmedBookings;
+    }
+}
+
 class BookingService {
 
     private InventoryService inventory;
     private Set<String> allocatedRoomIds = new HashSet<>();
     private Map<String, Set<String>> roomAllocations = new HashMap<>();
+    private BookingHistory history;
 
-    public BookingService(InventoryService inventory) {
+    public BookingService(InventoryService inventory, BookingHistory history) {
         this.inventory = inventory;
+        this.history = history;
     }
 
     public void processReservation(Reservation reservation) {
@@ -134,6 +149,8 @@ class BookingService {
 
         inventory.decrement(type);
 
+        history.addReservation(reservation);
+
         System.out.println("Reservation Confirmed");
         System.out.println("Reservation ID: " + reservation.getReservationId());
         System.out.println("Guest: " + reservation.getGuestName());
@@ -143,67 +160,21 @@ class BookingService {
     }
 }
 
-class Service {
+class BookingReportService {
 
-    private String name;
-    private double cost;
+    public void printBookingHistory(List<Reservation> reservations) {
 
-    public Service(String name, double cost) {
-        this.name = name;
-        this.cost = cost;
-    }
+        System.out.println("Booking History:\n");
 
-    public double getCost() {
-        return cost;
-    }
-
-    public String getName() {
-        return name;
-    }
-}
-
-class AddOnServiceManager {
-
-    private Map<String, List<Service>> reservationServices = new HashMap<>();
-
-    public void addService(String reservationId, Service service) {
-        reservationServices
-                .computeIfAbsent(reservationId, k -> new ArrayList<>())
-                .add(service);
-    }
-
-    public double calculateTotalServiceCost(String reservationId) {
-
-        double total = 0;
-
-        List<Service> services = reservationServices.get(reservationId);
-
-        if (services != null) {
-            for (Service s : services) {
-                total += s.getCost();
-            }
+        for (Reservation r : reservations) {
+            System.out.println(
+                    "Reservation ID: " + r.getReservationId() +
+                            " | Guest: " + r.getGuestName() +
+                            " | Room Type: " + r.getRoom().getType()
+            );
         }
 
-        return total;
-    }
-
-    public void displayServices(String reservationId) {
-
-        List<Service> services = reservationServices.get(reservationId);
-
-        if (services == null) {
-            System.out.println("No services selected.");
-            return;
-        }
-
-        System.out.println("Services for Reservation " + reservationId + ":");
-
-        for (Service s : services) {
-            System.out.println(s.getName() + " - $" + s.getCost());
-        }
-
-        System.out.println("Total Add-On Cost: $" + calculateTotalServiceCost(reservationId));
-        System.out.println();
+        System.out.println("\nTotal Bookings: " + reservations.size());
     }
 }
 
@@ -222,27 +193,15 @@ public class BookMyStayApp {
         queue.addRequest(new Reservation("R3", "Charlie", suite));
 
         InventoryService inventory = new InventoryService();
-        BookingService bookingService = new BookingService(inventory);
-
-        List<Reservation> confirmedReservations = new ArrayList<>();
+        BookingHistory history = new BookingHistory();
+        BookingService bookingService = new BookingService(inventory, history);
 
         while (queue.hasRequests()) {
             Reservation r = queue.getNextRequest();
             bookingService.processReservation(r);
-            confirmedReservations.add(r);
         }
 
-        AddOnServiceManager serviceManager = new AddOnServiceManager();
-
-        Service breakfast = new Service("Breakfast", 20);
-        Service airportPickup = new Service("Airport Pickup", 40);
-        Service spa = new Service("Spa Access", 60);
-
-        serviceManager.addService("R1", breakfast);
-        serviceManager.addService("R1", airportPickup);
-        serviceManager.addService("R2", spa);
-
-        serviceManager.displayServices("R1");
-        serviceManager.displayServices("R2");
+        BookingReportService reportService = new BookingReportService();
+        reportService.printBookingHistory(history.getReservations());
     }
 }
